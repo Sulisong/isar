@@ -1,0 +1,89 @@
+name: Build OHOS Binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v3.1.0), leave empty to skip release upload"
+        required: false
+      ohos_sdk_version:
+        description: "OpenHarmony SDK version"
+        default: "5.0.0.71"
+        required: false
+
+env:
+  OHOS_SDK_VERSION: ${{ github.event.inputs.ohos_sdk_version || '5.0.0.71' }}
+
+jobs:
+  build:
+    name: Build OHOS (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            rust_target: aarch64-unknown-linux-ohos
+          - arch: x86_64
+            rust_target: x86_64-unknown-linux-ohos
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache OpenHarmony SDK
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/ohos-sdk
+          key: ohos-sdk-native-${{ env.OHOS_SDK_VERSION }}
+
+      - name: Download OpenHarmony SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/ohos-sdk
+          echo "Downloading OpenHarmony SDK native ${OHOS_SDK_VERSION}..."
+
+          # Primary: Huawei Cloud mirror for native sysroot
+          SYSROOT_URL="https://repo.huaweicdn.com/harmonyos/os/${OHOS_SDK_VERSION}/native-linux-x64-${OHOS_SDK_VERSION}.zip"
+          # Fallback: direct from openharmony mirror
+          FALLBACK_URL="https://mirror.infvie.com/openharmony/os/${OHOS_SDK_VERSION}/native-linux-x64-${OHOS_SDK_VERSION}.zip"
+
+          wget -q --show-progress -O /tmp/ohos-native.zip "$SYSROOT_URL" || \
+            wget -q --show-progress -O /tmp/ohos-native.zip "$FALLBACK_URL" || \
+            { echo "::error::Failed to download OpenHarmony SDK. Set ohos_sdk_version to a valid version."; exit 1; }
+
+          unzip -q /tmp/ohos-native.zip -d ~/ohos-sdk/
+          rm /tmp/ohos-native.zip
+
+          echo "Downloaded SDK structure:"
+          ls ~/ohos-sdk/native/ 2>/dev/null || ls ~/ohos-sdk/
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make cmake
+
+      - name: Build
+        run: bash tool/build_ohos.sh ${{ matrix.arch }}
+        env:
+          OHOS_NDK_HOME: ~/ohos-sdk/native
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libisar_ohos_${{ matrix.arch }}
+          path: libisar_ohos_*.so
+
+      - name: Upload to release
+        uses: svenstaro/upload-release-action@v2
+        if: github.event.inputs.tag != ''
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: libisar_ohos_${{ matrix.arch }}.so
+          asset_name: libisar_ohos_${{ matrix.arch }}.so
+          tag: ${{ github.event.inputs.tag }}
