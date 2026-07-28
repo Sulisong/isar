@@ -141,8 +141,14 @@ fn main() {
             .define("MDBX_TXN_CHECKOWNER", "0")
             .define("MDBX_APPLE_SPEED_INSTEADOF_DURABILITY", "1")
             .define("MDBX_HAVE_BUILTIN_CPU_SUPPORTS", "0")
-            .define("NDEBUG", "1")
-            .file(mdbx.join("mdbx.c"))
-            .compile("libmdbx.a");
+            .define("NDEBUG", "1");
+
+        // OpenHarmony's musl-based libc doesn't support pthread_mutex_consistent
+        let target = env::var("TARGET").unwrap_or_default();
+        if target.contains("-ohos") {
+            cc_builder.define("MDBX_HAVE_ROBUST", "0");
+        }
+
+        cc_builder.file(mdbx.join("mdbx.c")).compile("libmdbx.a");
     }
 }
