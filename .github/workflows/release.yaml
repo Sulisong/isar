@@ -1,9 +1,11 @@
 name: Isar release
 
 on:
-  push:
-    tags:
-      - "*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v3.1.0)"
+        required: true
 
 jobs:
   build_binaries:
@@ -42,7 +44,7 @@ jobs:
       - name: Prepare Build
         uses: ./.github/actions/prepare-build
       - name: Set Isar Version
-        run: echo "ISAR_VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+        run: echo "ISAR_VERSION=${{ github.event.inputs.tag }}" >> $GITHUB_ENV
       - name: Build binary
         run: bash tool/${{ matrix.script }}
       - name: Upload binary
@@ -51,7 +53,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ matrix.artifact_name }}
           asset_name: ${{ matrix.artifact_name }}
-          tag: ${{ github.ref }}
+          tag: ${{ github.event.inputs.tag }}
 
   testlab:
     needs: build_binaries
@@ -66,7 +68,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
       - name: Build
-        run: flutter build web --base-href /${{ github.ref_name }}/ --no-tree-shake-icons
+        run: flutter build web --base-href /${{ github.event.inputs.tag }}/ --no-tree-shake-icons
         working-directory: packages/isar_inspector
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
@@ -74,7 +76,7 @@ jobs:
           folder: packages/isar_inspector/build/web
           repository-name: isar/inspector
           token: ${{ secrets.TOKEN }}
-          target-folder: ${{ github.ref_name }}
+          target-folder: ${{ github.event.inputs.tag }}
           clean: false
 
   publish:
@@ -97,11 +99,11 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 10
       - name: Set Isar Version
-        run: echo "ISAR_VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+        run: echo "ISAR_VERSION=${{ github.event.inputs.tag }}" >> $GITHUB_ENV
       - name: Download Binaries
         run: sh tool/download_binaries.sh
       - name: Adjust Version
-        run: find . -type f -exec sed -i "s/0.0.0-placeholder/${{ github.ref_name }}/g" {} +
+        run: find . -type f -exec sed -i "s/0.0.0-placeholder/${{ github.event.inputs.tag }}/g" {} +
       - name: pub.dev credentials
         run: |
           mkdir -p $HOME/.config/dart
